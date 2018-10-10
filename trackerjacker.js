@@ -1370,11 +1370,10 @@ var TrackerJacker = (function() {
 	/**
 	 * Produce a listing of favorites
 	 */
-	var doApplyFavorite = function(statusName,selection) {
+	var doApplyFavorite = function(statusName,selection, who) {
 		if (!statusName) 
 			{return;}
 		statusName = statusName.toLowerCase(); 
-
 		var fav = favoriteExists(statusName),
 			markerdef, 
 			curToken,
@@ -1431,6 +1430,8 @@ var TrackerJacker = (function() {
 				updateGlobalStatus(fav.name,undefined,1);
 			}
 			midcontent += '<div style="width: 40px; height 40px; display: inline-block;"><img src="'+curToken.get('imgsrc')+'"></div>';
+	
+		
 		});
 
 		if ('' === midcontent)
@@ -1457,7 +1458,44 @@ var TrackerJacker = (function() {
 		updateAllTokenMarkers(); 
 		content += '</div>'; 
 		sendFeedback(content);
+		sendEditToOwners(selection);
+        		
+		 	
 	}; 
+	
+	var sendEditToOwners = function(selection) {
+			var owner;
+			//var selected;
+			_.each(selection,function(e) {
+				var selected = new Array();
+				selected[0]=e;
+
+				var curToken = getObj('graphic', e._id);
+				if (!curToken || curToken.get('_subtype') !== 'token' || curToken.get('isdrawing'))
+					{return;}
+				
+				//Send edit dialog to token owner
+				var controller = (getObj('character', curToken.get('represents')) || curToken);			
+				var type = (controller.get("controlledby") === "") ? 'Monster' : 'Player';
+
+				//Check if Token is a Monster
+				if(type == 'Monster') {
+			
+					//doMultiEditTokenStatus(curToken, "GM");
+					
+				}
+				
+				//Check if Token is a Player
+				if(type == 'Player') {
+					
+					var player = (getObj("player", controller.get("controlledby"))).get("_displayname");
+					doEditTokenStatus(selected, player);
+				}	
+		
+		
+			});
+
+	};
 
 	/**
 	 * Add a favorite status to the list of statuses
@@ -1708,6 +1746,7 @@ var TrackerJacker = (function() {
 			{content = '<span style="color: red; font-weight:bold;">No status "' + args + '" exists on any in the selection</span>'; }
 		updateAllTokenMarkers(toRemove); 
 		sendFeedback(content);
+		
 	};
 
 	/**
@@ -1732,7 +1771,7 @@ var TrackerJacker = (function() {
 	/**
 	 * Display token configuration (internally used)
 	 */
-	var doDisplayTokenConfig = function(args) {
+	var doDisplayTokenConfig = function(args,senderId,who) {
 		if (!args) 
 			{return;} 
 
@@ -1740,15 +1779,17 @@ var TrackerJacker = (function() {
 		if (!curToken || curToken.get('_subtype') !== 'token') {
 			sendError('Invalid target'); 
 		}
-
-		var content = makeTokenConfig(curToken); 
-		sendFeedback(content); 
+		if(isTokenController(curToken,senderId))
+		{
+			var content = makeTokenConfig(curToken); 
+			sendFeedback(content,who); 
+		}
 	}; 
 
 	/**
 	 * Display status configuration (internally used)
 	 */
-	var doDisplayStatusConfig = function(args) {
+	var doDisplayStatusConfig = function(args,selected,who) {
 		if (!args) 
 			{return;} 
 
@@ -1776,14 +1817,14 @@ var TrackerJacker = (function() {
 				break;
 			case 'change':
 				content = makeStatusConfig(curToken,statusName); 
-				sendFeedback(content); 
+				sendFeedback(content,who); 
 				break;
 			case 'removefav':
 				doRemoveFavorite(statusName); 
 				break; 
 			case 'changefav':
 				content = makeStatusConfig('',statusName,favoriteExists(statusName)); 
-				sendFeedback(content);
+				sendFeedback(content,who);
 				break; 
 			default:
 				sendError('Invalid syntax'); 
@@ -1794,9 +1835,9 @@ var TrackerJacker = (function() {
 	/**
 	 * Display favorite configuration
 	 */ 
-	var doDisplayFavConfig = function() {
+	var doDisplayFavConfig = function(who) {
 		var content = makeFavoriteConfig(); 
-		sendFeedback(content); 
+		sendFeedback(content,who); 
 	}; 
 
 	/**
@@ -1817,6 +1858,23 @@ var TrackerJacker = (function() {
 		sendFeedback(content); 
 	};
 
+	var doEditTokenStatus = function(selection, senderId) {
+		var graphic; 
+		var senderId=senderId;
+		
+		if (!selection 
+		|| selection.length !== 1 
+		|| !(graphic = getObj('graphic',selection[0]._id)
+		|| graphic.get('_subtype') !== 'token' )
+		|| graphic.get('isdrawing')) {
+			sendError('Invalid selection'); 
+			return; 
+		}
+		var curToken = getObj('graphic',selection[0]._id);
+		var content = makeTokenConfig(curToken); 
+		sendFeedback(content,senderId); 
+
+	};
 	/**
 	 * Display the status edit dialog for a multi edit
 	 */ 
@@ -1852,11 +1910,14 @@ var TrackerJacker = (function() {
 	/**
 	 * Display the multi edit token dialog
 	 */ 
-	var doMultiEditTokenStatus = function(selection) {
+	var doMultiEditTokenStatus = function(selection, senderId) {
+		
 		if (!selection) 
 			{return;}
 		if (selection.length === 1) 
-			{return doEditTokenStatus(selection);}
+			{
+				return doEditTokenStatus(selection);
+			}
 
 		var tuple = [],
 			subTuple,
@@ -1880,7 +1941,24 @@ var TrackerJacker = (function() {
 		});
 
 		content = makeMultiTokenConfig(tuple); 
-		sendFeedback(content); 
+		sendFeedback(content,senderId); 
+	
+	};
+
+	var doCheckEditTokenStatus = function(selection, senderId) {
+
+		if (!selection) 
+			{return;}
+		if (selection.length === 1) 
+			{
+				return doEditTokenStatus(selection, senderId);
+			}
+		else 
+		{
+			doMultiEditTokenStatus(selection, senderId);
+
+		}
+		
 	};
 
 	/**
@@ -2833,9 +2911,28 @@ var TrackerJacker = (function() {
 	/**
 	* Fake message is fake!
 	*/
-	var sendFeedback = function(msg) {
+	/*var sendFeedback = function(msg) {
+		log("send feedback");
+		log(msg);
 		var content = '/w GM '
 				+ '<div style="position: absolute; top: 4px; left: 5px; width: 26px;">'
+					+ '<img src="' + fields.feedbackImg + '">' 
+				+ '</div>'
+				+ msg;
+			
+		sendChat(fields.feedbackName,content,null,(flags.archive ? {noarchive:true}:null));
+	};
+	*/
+	/*
+	Updated send chat to handle messages to playesr
+	*/
+	var sendFeedback = function(msg, who) {
+		if (_.isUndefined(who) || who === 'undefined')
+		{
+			who="GM";
+		}
+		var content = '/w '+who
+				+ ' <div style="position: absolute; top: 4px; left: 5px; width: 26px;">'
 					+ '<img src="' + fields.feedbackImg + '">' 
 				+ '</div>'
 				+ msg;
@@ -2881,10 +2978,10 @@ var TrackerJacker = (function() {
 	var handleChatMessage = function(msg) { 
 		var args = msg.content,
 			senderId = msg.playerid,
-			selected = msg.selected; 
-			
+			selected = msg.selected,
+			who = msg.who; 
 		if (msg.type === 'api'
-		&& playerIsGM(senderId)
+		//&& playerIsGM(senderId)
 		&& args.indexOf('!tj') === 0) {
 			args = args.replace('!tj','').trim();
 			if (args.indexOf('-start') === 0) {
@@ -2914,13 +3011,13 @@ var TrackerJacker = (function() {
 				doDirectMarkerApply(args);	 
 			} else if (args.indexOf('-disptokenconfig') === 0) {
 				args = args.replace('-disptokenconfig','').trim();
-				doDisplayTokenConfig(args); 	
+				doDisplayTokenConfig(args,senderId,who); 	
 			} else if (args.indexOf('-dispstatusconfig') === 0) {
 				// dirty fix
 				args = args.replace('-dispstatusconfig','');
-				doDisplayStatusConfig(args); 	
+				doDisplayStatusConfig(args,selected,who); 	
 			} else if (args.indexOf('-listfav') === 0) {
-				doDisplayFavConfig(); 	
+				doDisplayFavConfig(who); 	
 			} else if (args.indexOf('-dispmultistatusconfig') === 0) {
 				args = args.replace('-dispmultistatusconfig','').trim();
 				doDisplayMultiStatusConfig(args); 	
@@ -2931,14 +3028,14 @@ var TrackerJacker = (function() {
 				args = args.replace('-edit_multi_status','').trim();
 				doEditMultiStatus(args); 	
 			} else if (args.indexOf('-edit') === 0) {
-				args = args.replace('-edit','').trim();
-				doMultiEditTokenStatus(selected); 	
+				args = args.replace('-edit','').trim();	
+				doCheckEditTokenStatus(selected, who); 	
 			} else if (args.indexOf('-addfav') === 0) {
 				args = args.replace('-addfav','').trim();
 				doAddFavorite(args); 
 			} else if (args.indexOf('-applyfav') === 0) {
 				args = args.replace('-applyfav','').trim();
-				doApplyFavorite(args,selected); 
+				doApplyFavorite(args,selected, who); 
 			}  else if (args.indexOf('-relay') === 0) {
 				args = args.replace('-relay','').trim(); 
 				doRelay(args,senderId); 
